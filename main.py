@@ -1,16 +1,12 @@
 import io
-import os
 from contextlib import asynccontextmanager
 
 import numpy as np
-import tensorflow as tf
+import torch
+from torchvision import models, transforms
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import HTMLResponse
 from PIL import Image
-from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2, decode_predictions, preprocess_input
-
-# TensorFlowの最適化警告(oneDNN)などを抑制し、出力をクリーンにします
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 # グローバルにモデルを保持するためのコンテナ
 ml_models = {}
@@ -49,7 +45,14 @@ async def lifespan(app: FastAPI):
     アプリの起動時にモデルを1回だけロードし、メモリ効率を向上させます。
     """
     print("Loading AI model...")
-    ml_models["model"] = MobileNetV2(weights='imagenet')
+    # 学習済み重みの指定とモデルのロード
+    weights = models.MobileNet_V2_Weights.DEFAULT
+    model = models.mobilenet_v2(weights=weights)
+    model.eval()  # 推論モードに設定
+    
+    ml_models["model"] = model
+    ml_models["preprocess"] = weights.transforms()
+    ml_models["categories"] = weights.meta["categories"]
     yield
     # 終了処理が必要な場合はここに記述
     ml_models.clear()
@@ -78,20 +81,22 @@ async def predict(file: UploadFile = File(...)):
         content = await file.read()
         img = Image.open(io.BytesIO(content)).convert('RGB')
         
-        # MobileNetV2の入力サイズ(224x224)にリサイズ
-        img = img.resize((224, 224))
-        
-        # 推論用の前処理
-        x = tf.keras.preprocessing.image.img_to_array(img)
-        x = np.expand_dims(x, axis=0)
-        x = preprocess_input(x)
+        # 推論用の前処理（リサイズ、正規化等）
+        preprocess = ml_models["preprocess"]
+        input_tensor = preprocess(img).unsqueeze(0)
         
         # 推論実行
-        preds = ml_models["model"].predict(x)
-        decoded_results = decode_predictions(preds, top=3)[0]
+        with torch.no_grad():
+            output = ml_models["model"](input_tensor)
+        
+        # ソフトマックスで確率に変換し、上位3つを取得
+        probabilities = torch.nn.functional.softmax(output[0], dim=0)
+        top3_prob, top3_indices = torch.topk(probabilities, 3)
         
         predictions = []
-        for _, desc, prob in decoded_results:
+        for i in range(3):
+            prob = top3_prob[i].item()
+            desc = ml_models["categories"][top3_indices[i].item()]
             category = get_japanese_category(desc)
             jp_desc = TRANSLATIONS.get(desc, desc.replace('_', ' ')) # 辞書になければアンダースコアを除去
             predictions.append({"category": category, "description": jp_desc, "probability": float(prob)})
