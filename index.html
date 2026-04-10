@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Image Classifier</title>
+    <style>
+        :root { --primary: #4a90e2; --bg: #f8f9fa; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: var(--bg); color: #333; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .card { background: white; padding: 2rem; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 500px; text-align: center; }
+        h1 { margin-bottom: 1.5rem; font-size: 1.5rem; color: #2c3e50; }
+        .upload-area { border: 2px dashed #cbd5e0; padding: 2rem; border-radius: 12px; cursor: pointer; transition: border-color 0.3s; margin-bottom: 1.5rem; }
+        .upload-area:hover { border-color: var(--primary); }
+        #preview { max-width: 100%; border-radius: 8px; margin-top: 1rem; display: none; }
+        .result-item { margin-top: 1.5rem; text-align: left; }
+        .label-group { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.9rem; }
+        .category-badge { background: var(--primary); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; margin-right: 8px; }
+        .progress-bar { background: #edf2f7; height: 8px; border-radius: 4px; overflow: hidden; }
+        .progress-fill { background: var(--primary); height: 100%; width: 0%; transition: width 0.6s cubic-bezier(0.1, 0, 0.2, 1); }
+        .loading { color: var(--primary); font-weight: bold; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>AI画像オブジェクト分類</h1>
+        <div class="upload-area" onclick="document.getElementById('imageInput').click()">
+            <p>クリックして画像をアップロード</p>
+            <input type="file" id="imageInput" accept="image/*" hidden>
+        </div>
+        <img id="preview" alt="Preview">
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const preview = document.getElementById('preview');
+        const resultsDiv = document.getElementById('results');
+
+        imageInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // プレビュー表示
+            preview.src = URL.createObjectURL(file);
+            preview.style.display = 'block';
+            resultsDiv.innerHTML = '<p class="loading">AI解析中...</p>';
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/predict', { method: 'POST', body: formData });
+                if (!response.ok) throw new Error('解析に失敗しました');
+                
+                const data = await response.json();
+                renderResults(data.predictions);
+            } catch (err) {
+                resultsDiv.innerHTML = `<p style="color:red;">${err.message}</p>`;
+            }
+        });
+
+        function renderResults(predictions) {
+            resultsDiv.innerHTML = '<h2 style="font-size: 1.1rem; margin-top: 2rem;">解析結果</h2>';
+            predictions.forEach(p => {
+                const percentage = (p.probability * 100).toFixed(1);
+                resultsDiv.innerHTML += `
+                    <div class="result-item">
+                        <div class="label-group">
+                            <span><span class="category-badge">${p.category}</span>${p.description}</span>
+                            <span>${percentage}%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${percentage}%"></div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+    </script>
+</body>
+</html>
