@@ -1,4 +1,5 @@
 import io
+import os
 from contextlib import asynccontextmanager
 
 import numpy as np
@@ -109,9 +110,9 @@ async def predict(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    # ポート番号を指定
-    listen_port = 9000
+    # 環境変数 PORT があればそれを使用し、なければ 9000 をデフォルトにする
+    listen_port = int(os.environ.get("PORT", 9000))
     print(f"\n" + "="*50)
-    print(f"AI画像解析サーバーを起動中... http://localhost:{listen_port}")
+    print(f"AI画像解析サーバーを起動中... http://0.0.0.0:{listen_port}")
     print("="*50 + "\n")
     uvicorn.run(app, host="0.0.0.0", port=listen_port)
